@@ -10,7 +10,7 @@ const C_WALL_FILL = '#16213E';
 const C_WALL_EDGE = '#0F3460';
 const C_BELT = '#4A4A6A';
 const C_BELT_STRIPE = '#5A5A8A';
-const C_BLOCK = '#7D26CD';
+const C_BLOCK = '#BF00FF';
 const C_BLOCK_EDGE = '#FFFFFF';
 const C_FORCE_SPRING = '#FF3366';
 const C_FORCE_FRICTION = '#00D2FF';
@@ -78,6 +78,7 @@ class SceneRenderer {
     this._drawMarkers(ctx, state, params);
     this._drawLegend(ctx);
     this._drawCollision(ctx, state);
+    this._drawWatermark(ctx, state);
     ctx.restore();
   }
 
@@ -342,6 +343,22 @@ class SceneRenderer {
       ctx.fillText(label, startX + 32, y);
       y += 22;
     }
+  }
+
+  _drawWatermark(ctx, state) {
+    // 水印跟随方块位置
+    const block_cx = WALL_X + WALL_W + state.x;
+    const wm_x = block_cx;
+    const wm_y = BELT_Y0 - 0.15;
+    const [px, py] = this._toPixel(wm_x, wm_y);
+    ctx.save();
+    ctx.fillStyle = '#B399FF';
+    ctx.font = `italic ${Math.max(10, this._scaleX(0.055))}px monospace`;
+    ctx.globalAlpha = 0.7;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('github.com/lingxilu-sudo', px, py);
+    ctx.restore();
   }
 
   _drawCollision(ctx, state) {

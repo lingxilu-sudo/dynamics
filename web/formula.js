@@ -67,7 +67,7 @@ class FormulaPanel {
     const frictionless = params.mu_k < 0.001;
     if (frictionless) {
       this._render([
-        '$\\bf{Simple\\ Harmonic\\ Motion}$',
+        '$\\textbf{Simple\\ Harmonic\\ Motion}$',
         '',
         'Frictionless (\\u03BC_k = 0):',
         '$m\\ddot{x} = -k(x - L_0)$',
@@ -82,7 +82,7 @@ class FormulaPanel {
       ], 'Phase: SHM (\u03BC_k = 0)');
     } else {
       this._render([
-        '$\\bf{Simple\\ Harmonic\\ Motion}$',
+        '$\\textbf{Simple\\ Harmonic\\ Motion}$',
         '',
         'Friction constant (direction + magnitude):',
         '$f = -\\mu_k mg \\cdot \\mathrm{sgn}(v_{rel}) = \\mathrm{const}$',
@@ -100,7 +100,7 @@ class FormulaPanel {
 
   _showStuck() {
     this._render([
-      '$\\bf{Stuck\\ Phase\\ (Static\\ Friction)}$',
+      '$\\textbf{Stuck\\ Phase\\ (Static\\ Friction)}$',
       '',
       'Block moves with belt:',
       '$v(t) = v_{belt}$',
@@ -114,7 +114,7 @@ class FormulaPanel {
 
   _showSliding() {
     this._render([
-      '$\\bf{Sliding\\ Phase\\ (Kinetic\\ Friction)}$',
+      '$\\textbf{Sliding\\ Phase\\ (Kinetic\\ Friction)}$',
       '',
       '$m\\ddot{x} = -k(x - L_0) - \\mu_k mg\\cdot\\mathrm{sgn}(v_{rel})$',
       '',
@@ -131,7 +131,7 @@ class FormulaPanel {
 
   _showCollision() {
     this._render([
-      '$\\bf{Wall\\ Collision}$',
+      '$\\textbf{Wall\\ Collision}$',
       '',
       'Perfectly inelastic:',
       '$v(t^+) = 0$',
