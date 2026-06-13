@@ -104,8 +104,25 @@ class SceneRenderer:
         )
         ax.add_patch(self.roller_dot_r)
 
-        # 传送带动态条纹列表
+        # 传送带动态条纹（预创建，只更新位置）
+        belt_x0 = WALL_X + WALL_W + 0.1
+        belt_w = SCENE_X_MAX - belt_x0 + 0.1
+        self._belt_x0 = belt_x0
+        self._belt_w = belt_w
+        self._n_stripes = 12
+        self._stripe_spacing = belt_w / self._n_stripes
+        self._belt_shift = 0.0  # 累计偏移（增量式，保证调速顺滑）
+        self._prev_t = 0.0
+
         self.belt_stripes = []
+        for i in range(self._n_stripes + 2):
+            stripe = mlines.Line2D(
+                [0, 0], [BELT_Y0, BELT_Y0 + BELT_H],
+                color=C_BELT_STRIPE, linewidth=2, alpha=0.7, zorder=2
+            )
+            stripe.set_visible(False)
+            ax.add_line(stripe)
+            self.belt_stripes.append(stripe)
 
         # ---- 平衡位置标记（合力为0，动态更新）----
         eq_x = WALL_X + WALL_W + L0  # 初始位置
@@ -283,31 +300,26 @@ class SceneRenderer:
         self.stuck_indicator.set_x(block_x + BLOCK_W / 2)
         self.stuck_indicator.set_y(block_y + BLOCK_H + 0.15)
 
-        # ---- 传送带条纹 (动态绘制) ----
-        for s in self.belt_stripes:
-            s.remove()
-        self.belt_stripes.clear()
+        # ---- 传送带条纹（增量累加偏移，顺滑无跳变）----
+        dt = state.t - self._prev_t
+        self._prev_t = state.t
+        self._belt_shift += params.v_belt * dt
+        # 循环取模
+        self._belt_shift = self._belt_shift % self._stripe_spacing
 
-        belt_x0 = WALL_X + WALL_W + 0.1
-        belt_w = SCENE_X_MAX - belt_x0 + 0.1
-        belt_y = BELT_Y0
-        n_stripes = 10
-        stripe_spacing = belt_w / n_stripes
-        shift = (state.t * params.v_belt) % stripe_spacing
-        for i in range(n_stripes + 3):
-            sx = belt_x0 + stripe_spacing * i + shift
-            while sx > belt_x0 + belt_w:
-                sx -= belt_w + stripe_spacing
-            while sx < belt_x0:
-                sx += belt_w + stripe_spacing
-            # 严格限制条纹只在传送带范围内（不能超出墙壁左侧）
-            if belt_x0 <= sx <= belt_x0 + belt_w:
-                stripe = mlines.Line2D(
-                    [sx, sx], [belt_y, belt_y + BELT_H],
-                    color=C_BELT_STRIPE, linewidth=2, alpha=0.7, zorder=2
-                )
-                self.ax.add_line(stripe)
-                self.belt_stripes.append(stripe)
+        idx = 0
+        for i in range(self._n_stripes + 2):
+            sx = self._belt_x0 + self._stripe_spacing * i + self._belt_shift
+            # 确保在传送带范围内
+            if sx > self._belt_x0 + self._belt_w:
+                sx -= (self._n_stripes + 2) * self._stripe_spacing
+            if self._belt_x0 <= sx <= self._belt_x0 + self._belt_w:
+                self.belt_stripes[idx].set_data([sx, sx], [BELT_Y0, BELT_Y0 + BELT_H])
+                self.belt_stripes[idx].set_visible(True)
+                idx += 1
+        # 隐藏多余条纹
+        for j in range(idx, len(self.belt_stripes)):
+            self.belt_stripes[j].set_visible(False)
 
         # ---- 平衡位置标记（仅在有相对运动时显示）----
         if not state.is_stuck:
@@ -491,6 +503,7 @@ class FormulaPanel:
         self._setup()
         self.prev_stuck = None
         self._current_phase = None
+        self._prev_mu_k = None  # 跟踪参数变化，确保调参时刻新显示
 
     def _setup(self):
         ax = self.ax
@@ -538,29 +551,74 @@ class FormulaPanel:
 
     def update(self, state: PhysicsState, params: PhysicsParams):
         """根据当前状态选择公式"""
+        # 参数变化时强制刷新
+        if self._prev_mu_k is not None and abs(params.mu_k - self._prev_mu_k) > 0.001:
+            self._current_phase = None
+        self._prev_mu_k = params.mu_k
+
         # 确定当前阶段
+        # SHM判定：滑动状态下摩擦力连续稳定超过30步（方向+大小恒定）
+        SHM_THRESHOLD = 30  # ~24ms at DT=0.0008s
+
         if state.has_collision and state.collision_timer > 0:
             phase = 'collision'
         elif state.is_stuck:
             phase = 'stuck'
-        elif abs(params.ratio - 1.0) < 0.01:
-            phase = 'equal_mu'
+        elif not state.is_stuck and state.friction_stable_steps >= SHM_THRESHOLD:
+            phase = 'shm'  # 摩擦力恒定 → 简谐运动
         else:
             phase = 'sliding'
 
-        # 只在阶段变化时更新（避免每帧重复设置）
+        # 只在阶段变化时更新
         if phase == self._current_phase:
             return
         self._current_phase = phase
 
-        if phase == 'stuck':
+        if phase == 'shm':
+            self._show_shm(params)
+        elif phase == 'stuck':
             self._show_stuck()
         elif phase == 'sliding':
             self._show_sliding()
-        elif phase == 'equal_mu':
-            self._show_equal_mu()
         elif phase == 'collision':
             self._show_collision()
+
+    def _show_shm(self, params):
+        frictionless = params.mu_k < 0.001
+        if frictionless:
+            lines = [
+                r'$\bf{Simple\ Harmonic\ Motion}$',
+                '',
+                r'Frictionless ($\mu_k = 0$):',
+                r'EOM: $m\ddot{x} = -k(x - L_0)$',
+                '',
+                r'Restoring force $\propto$ displacement from $L_0$',
+                r'$x_{eq} = L_0$',
+                r'$\omega = \sqrt{k/m}$,  $T = 2\pi/\omega$',
+                '',
+                r'$x(t) = (x_0 - L_0)\cos\omega t + \frac{v_0}{\omega}\sin\omega t + L_0$',
+                '',
+                r'Energy conserved: $E = \frac{1}{2}kA^2$',
+            ]
+            self.status_text.set_text(r'Phase: SHM ($\mu_k = 0$)')
+        else:
+            lines = [
+                r'$\bf{Simple\ Harmonic\ Motion}$',
+                '',
+                r'Friction constant (direction + magnitude):',
+                r'$f = -\mu_k mg\cdot\mathrm{sgn}(v_{rel}) = \mathrm{const}$',
+                '',
+                r'EOM: $m\ddot{x} = -k(x - x_{eq})$',
+                r'$x_{eq} = L_0 - \frac{\mu_k mg}{k}\cdot\mathrm{sgn}(v_{rel})$',
+                r'$\omega = \sqrt{k/m}$',
+                '',
+                r'$x(t) = (x_0 - x_{eq})\cos\omega\Delta t$',
+                r'$\quad\quad + \frac{v_0}{\omega}\sin\omega\Delta t + x_{eq}$',
+                '',
+                r'Restoring force $\propto$ displacement from $x_{eq}$',
+            ]
+            self.status_text.set_text(r'Phase: SHM (const friction)')
+        self._set_lines(lines)
 
     def _show_stuck(self):
         lines = [
@@ -581,36 +639,20 @@ class FormulaPanel:
         lines = [
             r'$\bf{Sliding\ Phase\ (Kinetic\ Friction)}$',
             '',
-            r'$\omega = \sqrt{k \,/\, m}$',
-            r'$x_{eq} = L_0 - \frac{\mu_k \cdot m \cdot g}{k} \cdot \mathrm{sgn}(v_{rel})$',
+            r'EOM: $m\ddot{x} = -k(x - L_0) - \mu_k mg\cdot\mathrm{sgn}(v_{rel})$',
             '',
-            r'$x(t) = A\cos(\omega \Delta t) + B\sin(\omega \Delta t) + x_{eq}$',
+            r'When $\mathrm{sgn}(v - v_{belt})$ = const in phase:',
+            r'$\Rightarrow m\ddot{x} = -k(x - x_{eq})$  (SHM)',
+            r'$x_{eq} = L_0 - \frac{\mu_k mg}{k}\cdot\mathrm{sgn}(v_{rel})$',
+            r'$\omega = \sqrt{k/m}$',
             '',
-            r'$\Delta t = t - t_0$',
-            r'$A = x_0 - x_{eq}$',
-            r'$B = v_0 \,/\, \omega$',
-            r'$\mathrm{Amplitude} = \sqrt{A^2 + B^2}$',
+            r'$x(t) = (x_0 - x_{eq})\cos\omega\Delta t$',
+            r'$\quad\quad + \frac{v_0}{\omega}\sin\omega\Delta t + x_{eq}$',
             '',
-            r'Friction:  $f = -\mu_k m g \cdot \mathrm{sgn}(v - v_{belt})$',
+            r'Valid only while $\mathrm{sgn}(v-v_{belt})$ unchanged.',
         ]
         self._set_lines(lines)
-        self.status_text.set_text(r'Phase: SLIDING  (SHM)')
-
-    def _show_equal_mu(self):
-        lines = [
-            r'$\bf{Sliding\ Phase}\ (\mu_s = \mu_k)$',
-            '',
-            r'No stick-slip transition:',
-            r'$\omega = \sqrt{k \,/\, m}$',
-            r'$x_{eq} = L_0 - \frac{\mu_k \cdot m \cdot g}{k} \cdot \mathrm{sgn}(v_{rel})$',
-            '',
-            r'$x(t) = A\cos(\omega \Delta t) + B\sin(\omega \Delta t) + x_{eq}$',
-            '',
-            r'Continuous oscillation.',
-            r'Amplitude changes at phase boundaries.',
-        ]
-        self._set_lines(lines)
-        self.status_text.set_text(r'Phase: SLIDING  ($\mu_s = \mu_k$)')
+        self.status_text.set_text(r'Phase: SLIDING')
 
     def _show_collision(self):
         lines = [

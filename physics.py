@@ -45,6 +45,9 @@ class PhysicsState:
     has_collision: bool = False  # 是否发生墙壁碰撞（本帧）
     collision_timer: float = 0.0  # 碰撞提示显示计时器
     x_eq: float = L0            # 动态平衡位置（合力为0的位置）
+    # SHM 判定：连续多步摩擦力恒定（方向+大小不变）
+    friction_stable_steps: int = 0
+    _prev_friction: float = 0.0
     history_x: Deque[float] = field(default_factory=lambda: deque(maxlen=50000))
     history_t: Deque[float] = field(default_factory=lambda: deque(maxlen=50000))
 
@@ -141,6 +144,19 @@ def step(state: PhysicsState, params: PhysicsParams, dt: float = DT_PHYS):
     state.history_x.append(new_x)
     state.history_t.append(state.t)
 
+    # ---- SHM 判定：追踪摩擦力是否恒定 ----
+    if is_stuck:
+        # 粘滞状态下摩擦力在变（平衡弹簧力），重置
+        state.friction_stable_steps = 0
+        state._prev_friction = 0.0
+    else:
+        # 滑动状态：检查摩擦力是否和上一步一致
+        if abs(F_friction - state._prev_friction) < 1e-6:
+            state.friction_stable_steps += 1
+        else:
+            state.friction_stable_steps = 1  # 新的稳定段开始
+        state._prev_friction = F_friction
+
 
 def reset(state: PhysicsState):
     """重置为初始状态"""
@@ -153,5 +169,7 @@ def reset(state: PhysicsState):
     state.N = 0.0
     state.is_stuck = False
     state.x_eq = L0
+    state.friction_stable_steps = 0
+    state._prev_friction = 0.0
     state.history_x.clear()
     state.history_t.clear()
