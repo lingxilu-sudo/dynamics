@@ -77,6 +77,15 @@ def main():
         cache_frame_data=False,
     )
 
+    # ---- 水印 ----
+    fig.text(
+        0.98, 0.01, 'github.com/lingxilu-sudo',
+        ha='right', va='bottom',
+        fontsize=11, fontstyle='italic',
+        color='#B399FF', alpha=0.35,
+        fontfamily='monospace',
+    )
+
     plt.show()
     return ani
 
