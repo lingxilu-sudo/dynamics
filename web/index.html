@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conveyor Belt Spring-Mass Simulator</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #1A1A2E;
+  font-family: 'Segoe UI', Consolas, monospace;
+  color: #CCCCDD;
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+#app {
+  display: grid;
+  grid-template-columns: 3fr 1fr;
+  grid-template-rows: 3fr 2fr;
+  gap: 6px;
+  width: 96vw;
+  height: 92vh;
+  max-width: 1600px;
+  max-height: 900px;
+}
+#scene-container {
+  grid-row: 1; grid-column: 1;
+  background: #0F0F23;
+  border: 1px solid rgba(136,136,170,0.3);
+  border-radius: 6px;
+  position: relative;
+}
+#formula-container {
+  grid-row: 1; grid-column: 2;
+  background: #0F0F23;
+  border: 1px solid rgba(136,136,170,0.3);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-y: auto;
+}
+#plot-container {
+  grid-row: 2; grid-column: 1;
+  background: #0F0F23;
+  border: 1px solid rgba(136,136,170,0.3);
+  border-radius: 6px;
+  position: relative;
+}
+#controls-container {
+  grid-row: 2; grid-column: 2;
+  background: #0F0F23;
+  border: 1px solid rgba(136,136,170,0.3);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+canvas { display: block; width: 100%; height: 100%; }
+
+/* Formula Panel */
+#formula-container h3 {
+  color: #00D2FF;
+  text-align: center;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+#formula-content {
+  font-size: 13px;
+  line-height: 1.8;
+}
+#formula-content .katex { font-size: 0.95em; }
+#formula-status {
+  color: #00FF88;
+  font-weight: bold;
+  text-align: center;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+/* Controls */
+.ctrl-title {
+  color: #CCCCDD;
+  font-weight: bold;
+  text-align: center;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.slider-row label {
+  font-size: 11px;
+  color: #CCCCDD;
+  min-width: 80px;
+  text-align: right;
+}
+.slider-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  accent-color: #00D2FF;
+  cursor: pointer;
+}
+.slider-row .val {
+  font-size: 11px;
+  color: #CCCCDD;
+  min-width: 40px;
+}
+.btn-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.btn {
+  background: #00D2FF;
+  color: #000;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-weight: bold;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn:hover { background: #00FFFF; }
+.btn.active { background: #00FFFF; }
+.speed-row {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.speed-btn {
+  background: #00D2FF;
+  color: #000;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-weight: bold;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.speed-btn:hover { background: #00FFFF; }
+.speed-btn.active { background: #00FFFF; }
+
+/* Watermark */
+#watermark {
+  position: fixed;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  font-style: italic;
+  color: #B399FF;
+  opacity: 0.6;
+  font-family: monospace;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scene-container">
+    <canvas id="scene-canvas"></canvas>
+  </div>
+  <div id="formula-container">
+    <h3>Analytical Solution x(t)</h3>
+    <div id="formula-content"></div>
+    <div id="formula-status"></div>
+  </div>
+  <div id="plot-container">
+    <canvas id="plot-canvas"></canvas>
+  </div>
+  <div id="controls-container">
+    <div class="ctrl-title">Control Panel</div>
+    <div class="slider-row">
+      <label>k (N/m)</label>
+      <input type="range" id="sl-k" min="0.5" max="20" step="0.1" value="3.0">
+      <span class="val" id="val-k">3.00</span>
+    </div>
+    <div class="slider-row">
+      <label>mu_k</label>
+      <input type="range" id="sl-mu_k" min="0" max="1" step="0.01" value="0.25">
+      <span class="val" id="val-mu_k">0.25</span>
+    </div>
+    <div class="slider-row">
+      <label>mu_s / mu_k</label>
+      <input type="range" id="sl-ratio" min="1" max="3" step="0.05" value="1.6">
+      <span class="val" id="val-ratio">1.60</span>
+    </div>
+    <div class="slider-row">
+      <label>v_belt (m/s)</label>
+      <input type="range" id="sl-v_belt" min="0.2" max="3" step="0.05" value="1.5">
+      <span class="val" id="val-v_belt">1.50</span>
+    </div>
+    <div class="slider-row">
+      <label>m (kg)</label>
+      <input type="range" id="sl-m" min="0.2" max="5" step="0.1" value="1.0">
+      <span class="val" id="val-m">1.00</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="btn-play">Play</button>
+      <button class="btn" id="btn-pause">Pause</button>
+      <button class="btn" id="btn-reset">Reset</button>
+    </div>
+    <div class="ctrl-title" style="margin-top:6px;">Speed</div>
+    <div class="speed-row">
+      <button class="speed-btn active" data-speed="1">1x</button>
+      <button class="speed-btn" data-speed="2">2x</button>
+      <button class="speed-btn" data-speed="5">5x</button>
+      <button class="speed-btn" data-speed="10">10x</button>
+    </div>
+  </div>
+</div>
+<div id="watermark">github.com/lingxilu-sudo</div>
+
+<script src="physics.js"></script>
+<script src="renderer.js"></script>
+<script src="plotter.js"></script>
+<script src="formula.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
